@@ -1,0 +1,24 @@
+Yo, it's a NES game!
+
+Sort of. It will get better.
+
+Milestone list:
+
+1- Boot a ROM that does nothing
+2- Single sprite and backgroud tile visible on the screen
+3- Complete complex (multi-part) sprite visible on the screen
+4- Swap palette of sprite in response to gamepad
+5- Move sprite on screen with no animation
+6- Display a full tile map on the screen
+7- Collide a sprite with the world map
+8- Apply gravity to a sprite and have him stand on the "ground"
+9- Jumping sprite in response to the gamepad
+10- Scrolling tile map (moving camera)
+11- Add a second actor/sprite to the screen and make it stand
+12- Collide two actors with each other
+13- Create actors on screen from map data (e.g. some data in RAM)
+14- Change an actor's sprite based on its state
+15- AI update functions for each actor type called once per frame
+16- Play a sound effect based on a collision event
+17- Loop background music
+18- Tilemap transitions (e.g., end of level)
