@@ -30,6 +30,7 @@ START:
 	TXS			;; Move the contents of X to the stack pointer
 	INX			;; increment X by 1, which causes overflow, so
 				;; now X is 0
+	
 	STX $2000		;; set PPU flag to disable NMI (0x2000 = 0)
 	STX $2001		;; set PPU flag to disable rendering (0x2001 = 0)
 	STX $4010		;; disable APU IRQs, no audio
@@ -61,7 +62,7 @@ _START_clearmem:
 				;; (0200-07FF)
 
 	LDA #$FE		;; These two are clearing all of the sprite 
-	STA sprStartClearing, x	;; OAM; previous tutorial had this at 0300,
+	STA $0200, x		;; OAM; previous tutorial had this at 0300,
 				;; which may have been wrong. We don't HAVE
 				;; to reserve this range for OAM; we could
 				;; just manually poke bits into the PPU, but
@@ -164,12 +165,18 @@ _MAIN_LoadPaletteLoop:
 
 	LDA #%00010000		;; turn on sprites, no more background color
 	STA $2001		;; Write to PPU Control Register 2
-_MAIN_loop:
+	LDX #$0
+_MAIN_CopyMarioToOAM:
+	LDA sprMario, x
+	STA $0200, x
+	INX
+	CPX #$20
+	BNE _MAIN_CopyMarioToOAM
 	LDX #$0
 _MAIN_MoveMarioToPlayer_x:
 	LDA playerx
-	ADC sprMario_x, x
-	STA sprMario_x, x
+	ADC $0203, x
+	STA $0203, x
 	INX
 	INX
 	INX
@@ -179,14 +186,15 @@ _MAIN_MoveMarioToPlayer_x:
 	LDX #$0
 _MAIN_MoveMarioToPlayer_y:
 	LDA playery
-	ADC sprMario, x
-	STA sprMario, x
+	ADC $0200, x
+	STA $0200, x
 	INX
 	INX
 	INX
 	INX
 	CPX #$20
 	BNE _MAIN_MoveMarioToPlayer_y
+_MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
 NMI:
@@ -195,7 +203,7 @@ NMI:
 	;; to pull OAM from $0200, and do a DMA transfer.
 	LDA #$00
 	STA $2003
-	LDA #$FF
+	LDA #$02
 	STA $4014		; 4014 is the OAM_DMA operation, which will
 				; do a DMA from the (LDA|$2003) address,
 				; for FF bytes (in our case $0200-$02FF),
@@ -210,17 +218,15 @@ NMI:
 			;; between them.
 			;; .. How to know when we have written enough
 			;; code? ..
-
 palette:
   .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
   .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
 playerx:
-  .db $01
+  .db $08
 playery:
-  .db $01
-playerSprIndex:
+  .db $08
+curSprIndex:
   .db $00
-
 	;; I put the OAM copy here instead of $0200 because I want to
 	;; allow me to initialize some basic sprite organizations (such as
 	;; mario standing) without having to do a bunch of pokes into my
@@ -228,21 +234,18 @@ playerSprIndex:
 	;; the X and Y position. But I couldn't get the NMI copying to work
 	;; correctly when trying to set a bank to .org at $0200; I'm probably
 	;; just doing it wrong, but for now this works.
-  .org $FF00
 sprMario:
 	;; each 4-byte pair goes directly into the OAM
-  .db $10,$00,$00		; mario top left Y,tile,attrs
+  .db $00,$00,$00		; mario top left Y,tile,attrs
 sprMario_x:
-  .db $10			; mario top left X
-  .db $10,$01,$00,$18		; mario top right
-  .db $18,$02,$00,$10		; mario middle left
-  .db $18,$03,$00,$18 		; mario middle right
-  .db $20,$04,$00,$10		; mario middle bottom left
-  .db $20,$05,$00,$18		; mario middle bottom right
-  .db $28,$06,$00,$10		; mario bottom left
-  .db $28,$07,$00,$18		; mario bottom right
-sprStartClearing:
-  .db $00
+  .db $00			; mario top left X
+  .db $00,$01,$00,$08		; mario top right
+  .db $08,$02,$00,$00		; mario middle left
+  .db $08,$03,$00,$08 		; mario middle right
+  .db $10,$04,$00,$00		; mario middle bottom left
+  .db $10,$05,$00,$08		; mario middle bottom right
+  .db $18,$06,$00,$00		; mario bottom left
+  .db $18,$07,$00,$08		; mario bottom right
 
   .bank 1
   .org $FFFA
