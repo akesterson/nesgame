@@ -4,7 +4,7 @@ Sort of. It will get better.
 
 Milestone list:
 
-1- Boot a ROM that does nothing
+1- (DONE) Boot a ROM that does nothing 
 2- Single sprite and backgroud tile visible on the screen
 3- Complete complex (multi-part) sprite visible on the screen
 4- Swap palette of sprite in response to gamepad
