@@ -56,12 +56,15 @@ _START_clearmem:
 	STA $0500, x		;;    *(0x0100 + x) = 0;
 	STA $0600, x		;;    ....
 	STA $0700, x		;; the INX and BNE at the bottom are the "; x++)"
-				;; This clears the zero page, the stack, and
-				;; the entirety of main RAM
+				;; This clears the zero page (0000-00FF, the
+				;; stack (0100-01FF), the entirety of main RAM
+				;; (0200-07FF)
 
-	LDA #$FE		;; It's also not clear at all what these two
-	STA $0300, x		;; are setting; maybe it's object attribute
-				;; memory (OAM)?
+	LDA #$FE		;; These two are clearing all of the sprite 
+	STA $0200, x		;; OAM; previous tutorial had this at 0300,
+				;; which may have been wrong. I wonder why
+				;; NES engineers put the OAM inside of main
+				;; RAM? we lose FF bytes this way.
 
 	INX			;; X is already 0 so this should do X=1,
 				;; and the Zero and Sign flags should both go 0
@@ -75,7 +78,74 @@ _START_vblankwait2:
 
 MAIN:
 	;; horray, here is main()
-	;; all we do is set the PPU mask to intensify blues, and loop forever
+	;; Let's hit milestone 2 and draw a sprite
+
+_MAIN_LoadPalettes:
+	LDA $2002		; The PPU Memory address at $2006 expects
+				; the high byte of the palette address first,
+				; then the low byte, but we can't know
+				; which one it's expecting right now, so we
+				; read the PPU status at $2002 to reset the
+				; high/low latch on $2006.
+	LDA #$3F		; we're populating the second palette, at $3F10
+	STA $2006
+	LDA #$00
+	STA $2006
+	LDX #$00
+_MAIN_LoadPaletteLoop:
+	LDA palette, x		; Loop over each index of the byte array at
+	STA $2007		; 'palette', store each one into the accumulator
+	INX			; and then store the accumulator into the PPU
+	CPX #$20		; .. compare X to 20 (size of 'palette'), and
+	BNE _MAIN_LoadPaletteLoop ; loop as long as the Zero flag isn't set (NE)
+
+_MAIN_PlaceSprites:
+	;; All sprites live between 0200-02FF; there are a max of 64 sprites
+	;; on screen, and each one has a 4 byte struct describing it.
+	;; *(sprite + 0) = y position
+	;; *(sprite + 1) = tile index (0-FF) in the pattern table for pixels
+	;; *(sprite + 2) = attributes. Color palette, priority, and mirroring.
+	;;  76543210
+	;;  |||   ||
+	;;  |||   ++- Color Palette of sprite.  Choose which set of 4 from
+	;;  |||       	the 16 colors to use. You can select sprite colors only
+	;;  |||		in groups of 4 on 4 byte boundaries; so you can select
+	;;  |||		colors 0-3, 4-7, 8-11, and 12-15, but not 2-5, for
+	;;  |||		example. Palette construction and use is an art in
+	;;  |||		itself!
+	;;  |||
+	;;  ||+------ Priority (0: in front of background; 1: behind background)
+	;;  |+------- Flip sprite horizontally
+	;;  +-------- Flip sprite vertically
+	;; *(sprite + 3) = x position
+
+	LDA #$80
+	STA $0200		; sprite 0 (0200 + 0) is at center ($80) x
+	STA $0203		; sprite 0 (0200 + 0) is at center ($80) y
+	LDA #$00
+	STA $0201		; sprite 0 is tile number 0
+	STA $0202 		; use colors 0-3, no mirroring
+
+	;; $2000 is the PPU Control register, controlled by various bitflags.
+	;; 
+	;; 7654 3210
+	;; |||| ||||
+	;; |||| ||++- Base nametable address
+	;; |||| ||    (0 = $2000; 1 = $2400; 2 = $2800; 3 = $2C00)
+	;; |||| |+--- VRAM address increment per CPU read/write of PPUDATA
+	;; |||| |     (0: increment by 1, going across;
+	;; |||| |      1: increment by 32, going down)
+	;; |||| +---- Sprite pattern table address for 8x8 sprites
+	;; ||||       (0: $0000; 1: $1000; ignored in 8x16 mode)
+	;; |||+------ Background pattern table address (0: $0000; 1: $1000)
+	;; ||+------- Sprite size (0: 8x8; 1: 8x16)
+	;; |+-------- PPU master/slave select (has no effect on the NES)
+	;; +--------- Generate an NMI at the start of the
+	;;            vertical blanking interval (0: off; 1: on)
+
+	LDA #%10000000		; enable NMI (so we get a function call every
+				; vblank), and draw sprites from table 0
+	STA $2000
 
 	;; The PPU mask is set at $2001, the 2nd PPU Control register, and it
 	;; sets one config option for every bit of the byte
@@ -93,12 +163,24 @@ MAIN:
 	;; |+------- Intensify greens (and darken other colors)
 	;; +-------- Intensify blues (and darken other colors)
 
-	LDA #%10000000		;; blue background!
+	LDA #%00010000		;; turn on sprites, no more background color
 	STA $2001		;; Write to PPU Control Register 2
 _MAIN_loop:	
 	JMP _MAIN_loop	 	;; Loop forever and do nothing
 
 NMI:
+	;; We need to copy all our OAM data to put sprites on screen during
+	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
+	;; to pull OAM from $0200, and do a DMA transfer.
+	LDA #$00
+	STA $2003
+	LDA #$02
+	STA $4014		; 4014 is the OAM_DMA operation, which will
+				; do a DMA from the (LDA|$2003) address,
+				; for FF bytes (in our case $0200-$02FF),
+				; which takes ~513 cycles. An unrolled
+				; loop to do the same thing would take
+				; 3-4 times as long.
 	RTI			; just return
 	
   .bank 1		;; NESASM sees our 16kB code banks as pairs of
@@ -107,8 +189,11 @@ NMI:
 			;; between them.
 			;; .. How to know when we have written enough
 			;; code? ..
-	
-	;; insert the rest of the bank 1 code here
+
+palette:
+  .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
+  .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
+
 
   .bank 1
   .org $FFFA
@@ -122,3 +207,4 @@ NMI:
 	
   .bank 2		;; CHR bank 0 starts here for tile/sprite data
   .org $0000		;; CHR data is below PRG data in the memory
+  .incbin "mario.chr"	; include 8kB of graphics from SMB1
