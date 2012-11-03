@@ -5,8 +5,9 @@ Sort of. It will get better.
 Milestone list:
 
 1- (DONE) Boot a ROM that does nothing 
-2- Single sprite and backgroud tile visible on the screen
-3- Complete complex (multi-part) sprite visible on the screen
+2- (DONE) Single sprite visible on the screen
+3- (DONE) Complete complex (multi-part) sprite visible on the screen
+3.5 - single background tile visible on the screen
 4- Swap palette of sprite in response to gamepad
 5- Move sprite on screen with no animation
 6- Display a full tile map on the screen

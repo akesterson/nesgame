@@ -51,7 +51,7 @@ _START_clearmem:
 				;; addressing?
 				;; ... that's what I thought at first, before
 	STA $0100, x		;; I realized that I'm looking at a loop:
-	STA $0200, x		;; 
+	STA $0200, x
 	STA $0400, x		;; for ( x = 0; x < 256 ; x++)
 	STA $0500, x		;;    *(0x0100 + x) = 0;
 	STA $0600, x		;;    ....
@@ -61,10 +61,13 @@ _START_clearmem:
 				;; (0200-07FF)
 
 	LDA #$FE		;; These two are clearing all of the sprite 
-	STA $0200, x		;; OAM; previous tutorial had this at 0300,
-				;; which may have been wrong. I wonder why
-				;; NES engineers put the OAM inside of main
-				;; RAM? we lose FF bytes this way.
+	STA sprStartClearing, x	;; OAM; previous tutorial had this at 0300,
+				;; which may have been wrong. We don't HAVE
+				;; to reserve this range for OAM; we could
+				;; just manually poke bits into the PPU, but
+				;; that is 3-4x (or more) slower than reserving
+				;; 256 bytes for an OAM copy that we DMA into
+				;; the PPU on every vblank/NMI
 
 	INX			;; X is already 0 so this should do X=1,
 				;; and the Zero and Sign flags should both go 0
@@ -98,8 +101,8 @@ _MAIN_LoadPaletteLoop:
 	INX			; and then store the accumulator into the PPU
 	CPX #$20		; .. compare X to 20 (size of 'palette'), and
 	BNE _MAIN_LoadPaletteLoop ; loop as long as the Zero flag isn't set (NE)
+	
 
-_MAIN_PlaceSprites:
 	;; All sprites live between 0200-02FF; there are a max of 64 sprites
 	;; on screen, and each one has a 4 byte struct describing it.
 	;; *(sprite + 0) = y position
@@ -119,13 +122,9 @@ _MAIN_PlaceSprites:
 	;;  +-------- Flip sprite vertically
 	;; *(sprite + 3) = x position
 
-	LDA #$80
-	STA $0200		; sprite 0 (0200 + 0) is at center ($80) x
-	STA $0203		; sprite 0 (0200 + 0) is at center ($80) y
-	LDA #$00
-	STA $0201		; sprite 0 is tile number 0
-	STA $0202 		; use colors 0-3, no mirroring
-
+	;; All the sprite OAM data is initialized at the bottom of bank 1
+	;; at .org $FF00
+	
 	;; $2000 is the PPU Control register, controlled by various bitflags.
 	;; 
 	;; 7654 3210
@@ -166,29 +165,37 @@ _MAIN_PlaceSprites:
 	LDA #%00010000		;; turn on sprites, no more background color
 	STA $2001		;; Write to PPU Control Register 2
 _MAIN_loop:
-	LDX #$3c		; have we gone through 60 vblanks (approx 1 sec)
-	CPX spritecounter
-	BEQ _MAIN_loop
-	LDX #$00
-	STX spritecounter
-	LDX $0201		; load sprite 0's tile number
+	LDX #$0
+_MAIN_MoveMarioToPlayer_x:
+	LDA playerx
+	ADC sprMario_x, x
+	STA sprMario_x, x
 	INX
-	STX $0201		; increment and store it back
-	JMP _MAIN_loop	 	;; Loop forever and do nothing
+	INX
+	INX
+	INX
+	CPX #$20
+	BNE _MAIN_MoveMarioToPlayer_x
+	LDX #$0
+_MAIN_MoveMarioToPlayer_y:
+	LDA playery
+	ADC sprMario, x
+	STA sprMario, x
+	INX
+	INX
+	INX
+	INX
+	CPX #$20
+	BNE _MAIN_MoveMarioToPlayer_y
+	JMP _MAIN_loop	 	;; Loop forever
 
 NMI:
-	;; Let's get a look at all the different tiles. Lets change it once
-	;; per second!
-	LDX spritecounter
-	INX
-	STX spritecounter
-_NMI_OAMDMA:
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
 	;; to pull OAM from $0200, and do a DMA transfer.
 	LDA #$00
 	STA $2003
-	LDA #$02
+	LDA #$FF
 	STA $4014		; 4014 is the OAM_DMA operation, which will
 				; do a DMA from the (LDA|$2003) address,
 				; for FF bytes (in our case $0200-$02FF),
@@ -207,9 +214,35 @@ _NMI_OAMDMA:
 palette:
   .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
   .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
-spritecounter:
+playerx:
+  .db $01
+playery:
+  .db $01
+playerSprIndex:
   .db $00
 
+	;; I put the OAM copy here instead of $0200 because I want to
+	;; allow me to initialize some basic sprite organizations (such as
+	;; mario standing) without having to do a bunch of pokes into my
+	;; OAM copy, because the only thing that ever actually changes is
+	;; the X and Y position. But I couldn't get the NMI copying to work
+	;; correctly when trying to set a bank to .org at $0200; I'm probably
+	;; just doing it wrong, but for now this works.
+  .org $FF00
+sprMario:
+	;; each 4-byte pair goes directly into the OAM
+  .db $10,$00,$00		; mario top left Y,tile,attrs
+sprMario_x:
+  .db $10			; mario top left X
+  .db $10,$01,$00,$18		; mario top right
+  .db $18,$02,$00,$10		; mario middle left
+  .db $18,$03,$00,$18 		; mario middle right
+  .db $20,$04,$00,$10		; mario middle bottom left
+  .db $20,$05,$00,$18		; mario middle bottom right
+  .db $28,$06,$00,$10		; mario bottom left
+  .db $28,$07,$00,$18		; mario bottom right
+sprStartClearing:
+  .db $00
 
   .bank 1
   .org $FFFA
