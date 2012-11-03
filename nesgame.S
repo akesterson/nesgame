@@ -165,10 +165,24 @@ _MAIN_PlaceSprites:
 
 	LDA #%00010000		;; turn on sprites, no more background color
 	STA $2001		;; Write to PPU Control Register 2
-_MAIN_loop:	
+_MAIN_loop:
+	LDX #$3c		; have we gone through 60 vblanks (approx 1 sec)
+	CPX spritecounter
+	BEQ _MAIN_loop
+	LDX #$00
+	STX spritecounter
+	LDX $0201		; load sprite 0's tile number
+	INX
+	STX $0201		; increment and store it back
 	JMP _MAIN_loop	 	;; Loop forever and do nothing
 
 NMI:
+	;; Let's get a look at all the different tiles. Lets change it once
+	;; per second!
+	LDX spritecounter
+	INX
+	STX spritecounter
+_NMI_OAMDMA:
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
 	;; to pull OAM from $0200, and do a DMA transfer.
@@ -193,6 +207,8 @@ NMI:
 palette:
   .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
   .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
+spritecounter:
+  .db $00
 
 
   .bank 1
