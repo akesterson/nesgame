@@ -9,4 +9,5 @@ test:
 .PHONY: clean
 clean:
 	rm *nes
+	rm *nes.deb
 	rm *fns

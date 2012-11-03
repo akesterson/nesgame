@@ -3,15 +3,15 @@
 	;; how many 8kB banks of CHR data, which mapper to use for bank swapping
 	;; and how to perform background mirroring
 
-	.inesprg 1		;; 1x 16kB bank of PRG (program) code
-	.ineschr 1		;; 1x 8kB bank of CHR (tile/sprite) data
-	.inesmap 0		;; use mapper 0; NROM, no bank swapping
-	.inesmir 1		;; background mirroring (we don't care for now)
+  .inesprg 1		;; 1x 16kB bank of PRG (program) code
+  .ineschr 1		;; 1x 8kB bank of CHR (tile/sprite) data
+  .inesmap 0		;; use mapper 0; NROM, no bank swapping
+  .inesmir 1		;; background mirroring (we don't care for now)
 
 	;; For NESASM, we need to tell it where each bank begins.
 
-	.bank 0
-	.org $C000		;; PRG bank 1 has 8kB at 0x0C000
+  .bank 0
+  .org $C000		;; PRG bank 1 has 8kB at 0x0C000
 
 	;; START will be called by the NES whenever the system boots
 	;; or when the reset button is pressed (think of _start in libc )
@@ -101,24 +101,24 @@ _MAIN_loop:
 NMI:
 	RTI			; just return
 	
-	.bank 1			;; NESASM sees our 16kB code banks as pairs of
-	.org $E000		;; 8kB code banks, so we have to declare each
-				;; 8kB half-bank separately, and split code
-				;; between them.
-				;; .. How to know when we have written enough
-				;; code? ..
+  .bank 1		;; NESASM sees our 16kB code banks as pairs of
+  .org $E000		;; 8kB code banks, so we have to declare each
+			;; 8kB half-bank separately, and split code
+			;; between them.
+			;; .. How to know when we have written enough
+			;; code? ..
 	
 	;; insert the rest of the bank 1 code here
 
-	.bank 1
-	.org $FFFA
-	.dw NMI	  ;; For Non-Maskable Interrupts, please jump to the location
-	          ;; of the NMI label
-	.dw START ;; For the reset button or power-on, jump to the location
-		  ;; of the START label
-	.dw 0	  ;; If we used an external IRQ vector, we would put it here
+  .bank 1
+  .org $FFFA
+  .dw NMI	;; For Non-Maskable Interrupts, please jump to the location
+	        ;; of the NMI label
+  .dw START 	;; For the reset button or power-on, jump to the location
+		;; of the START label
+  .dw 0	  	;; If we used an external IRQ vector, we would put it here
 
 	;; --- graphics bank
 	
-	.bank 2			;; CHR bank 0 starts here for tile/sprite data
-	.org $0000		;; CHR data is below PRG data in the memory
+  .bank 2		;; CHR bank 0 starts here for tile/sprite data
+  .org $0000		;; CHR data is below PRG data in the memory
