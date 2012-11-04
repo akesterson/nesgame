@@ -1,1 +1,2 @@
-  .alias curSpriteData curSpriteDataHi
+  .alias curSpriteDataRead curSpriteDataLo
+  .alias curSpriteDataWrite curSpriteDataHi

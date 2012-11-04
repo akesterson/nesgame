@@ -199,34 +199,41 @@ _MAIN_loop:
 NMI:
 	LDX #$0
 	LDY #$0
+	;; This is almost a reusable function ... store 'sprMario' as our
+	;; current sprite that we're about to draw
 	LDA sprMario
 	STA curSpriteLen
+	LDA #>sprMarioData
+	STA curSpriteDataHi
+	LDA #<sprMarioData
+	STA curSpriteDataLo
+	;; ----
 _NMI_CopyMarioToOAM:
 	LDA playery		; set Y position
 	CLC
-	ADC sprMarioData, x
-	STA $0200, x
-	INX
-	LDA sprMarioData, x	; set tile number
-	STA $0200, x
-	INX
+	ADC (curSpriteDataLo), y
+	STA $0200, y
+	INY
+	LDA (curSpriteDataLo), y	; set tile number
+	STA $0200, y
+	INY
 	LDA pad1a
 	AND #%00000001
 	BNE _NMI_CopyMarioToOAM_padup
-	LDA sprMarioData, x
+	LDA (curSpriteDataLo), y
 	JMP _NMI_CopyMarioToOAM_paddone
 _NMI_CopyMarioToOAM_padup:	
-	LDA sprMarioData, x	; set attributes
+	LDA sprMarioData, y	; set attributes
 _NMI_CopyMarioToOAM_paddone:	
-	STA $0200, x
-	INX
+	STA $0200, y
+	INY
 	LDA playerx		; set X position
 	CLC
-	ADC sprMarioData, x
-	STA $0200, x
-	INX
-	INY			; increment the sprite counter
-	CPY curSpriteLen	; any more sprites in the current multisprite?
+	ADC (curSpriteDataLo), y
+	STA $0200, y
+	INY
+	INX			; increment the sprite counter
+	CPX curSpriteLen	; any more sprites in the current multisprite?
 	BNE _NMI_CopyMarioToOAM
 	
 	;; We need to copy all our OAM data to put sprites on screen during
