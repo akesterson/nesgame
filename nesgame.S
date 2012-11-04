@@ -34,11 +34,11 @@ START:
 				;; now X is 0
 	
 	STX $2000		;; set PPU flag to disable NMI (0x2000 = 0)
-	STX $2001		;; set PPU flag to disable rendering (0x2001 = 0)
+	STX $2001		;; set PPU flag to disable rendering (0x2001=0)
 	STX $4010		;; disable APU IRQs, no audio
 _START_vblankwait:
 	BIT $2002		;; Bitwise AND the accumulator (LDA) with mem
-				;; at 0x2002, and set the Zero, Sign and Overflow
+				;; at 0x2002, and set the Zero, Sign & Overflow
 				;; flags accordingly. 0x2002 is the PPU status
 				;; register; when 0x2002 has bit 7 set, we are
 				;; in vblank, so this is how we check for it.
@@ -84,8 +84,6 @@ _START_vblankwait2:
 
 MAIN:
 	;; horray, here is main()
-	;; Let's hit milestone 2 and draw a sprite
-
 _MAIN_LoadPalettes:
 	LDA $2002		; The PPU Memory address at $2006 expects
 				; the high byte of the palette address first,
@@ -172,54 +170,43 @@ _MAIN_LoadPaletteLoop:
 	LDA #$80
 	STA playerx
 	STA playery
-	LDA #$0
-	STA curSpriteAttrOffset
-	STA curSpriteTileOffset
-	STA curSpriteXOffset
-	STA curSpriteYOffset
 _MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
 NMI:
 	LDX #$0
+	LDY #$0
+	LDA sprMario
+	STA curSpriteLen
+	LDA #LOW(sprMarioData) 	; This stuff doesn't work at current
+	STA curSpriteDataLo	; ""
+	LDA #HIGH(sprMarioData)	; ""
+	STA curSpriteDataHi 	; ""
 _NMI_CopyMarioToOAM:
 	LDA playery
-	LDY curSpriteYOffset
 	CLC
-	ADC sprMario_off_y, x
-	STA $0200, y
-	LDA #$4
-	ADC curSpriteYOffset
-	STA curSpriteYOffset
-
-	LDY curSpriteTileOffset
-	LDA sprMario, x
-	STA $0201, y
-	LDA #$4
-	CLC
-	ADC curSpriteTileOffset
-	STA curSpriteTileOffset
-
-	LDA #$00
-	LDY curSpriteAttrOffset
-	STA $0202, y
-	LDA #$4
-	CLC
-	ADC curSpriteAttrOffset
-	STA curSpriteAttrOffset
-	
-	LDA playerx
-	LDY curSpriteXOffset
-	ADC sprMario_off_x, x
-	STA $0203, y
-	LDA #$4
-	CLC
-	ADC curSpriteXOffset
-	STA curSpriteXOffset
-
+	ADC sprMarioData, x
+	STA $0200, x
 	INX
-	CPX #08
-	BNE _MAIN_CopyMarioToOAM
+
+	LDA sprMarioData, x
+	STA $0200, x
+	INX
+
+	LDA sprMarioData, x
+	STA $0200, x
+	INX
+
+	LDA playerx
+	CLC
+	ADC sprMarioData, x
+	STA $0200, x
+	INX
+
+	INY
+	CPY curSpriteLen
+	BNE _NMI_CopyMarioToOAM
+	
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
 	;; to pull OAM from $0200, and do a DMA transfer.
@@ -244,12 +231,18 @@ palette:
   .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
   .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
 sprMario:
-  .db $00,$01,$02,$03,$04,$05,$06,$07
-sprMario_off_x:
-  .db $00,$08,$00,$08,$00,$08,$00,$08
-sprMario_off_y:
-  .db $00,$00,$08,$08,$10,$10,$18,$18
-
+  .db $08 			; Total number of subsprites in this metasprite
+sprMarioData:
+  ;;  Y, Tile, Atr, X
+  .db $00,$00,$00,$00
+  .db $00,$01,$00,$08
+  .db $08,$02,$00,$00
+  .db $08,$03,$00,$08
+  .db $10,$04,$00,$00
+  .db $10,$05,$00,$08
+  .db $18,$06,$00,$00
+  .db $18,$07,$00,$08
+	
   .bank 1
   .org $FFFA
   .dw NMI	;; For Non-Maskable Interrupts, please jump to the location
