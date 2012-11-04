@@ -171,6 +171,48 @@ _MAIN_LoadPaletteLoop:
 	STA playerx
 	STA playery
 _MAIN_loop:
+	LDA #$01
+	STA $4016
+	LDA #$01
+	STA $4016		; $4016 is the controller port, this tells both
+				;; controllers to latch their buttons and
+				;; make data available
+	LDA #$0
+	STA pad1areleased
+	LDA $4016
+	AND #%00000001
+	BNE _MAIN_loop_pad1a_finished
+_MAIN_loop_pad1a_release:
+	PHA
+	LDA #pad1a
+	AND #%00000001
+	PLA
+	BNE _MAIN_loop_pad1a_finished
+	LDX #$1
+	STX pad1areleased
+_MAIN_loop_pad1a_finished:
+	STA pad1a
+	LDA $4016
+_MAIN_loop_pad1b_finished:
+	STA pad1b
+	LDA $4016
+_MAIN_loop_pad1sel_finished:
+	STA pad1select
+	LDA $4016
+_MAIN_loop_pad1start_finished:
+	STA pad1start
+	LDA $4016
+_MAIN_loop_pad1up_finished:
+	STA pad1up
+	LDA $4016
+_MAIN_loop_pad1down_finished:
+	STA pad1down
+	LDA $4016
+_MAIN_loop_pad1left_finished:
+	STA pad1left
+	LDA $4016
+_MAIN_loop_pad1right_finished:
+	STA pad1right
 	JMP _MAIN_loop	 	;; Loop forever
 
 NMI:
@@ -183,28 +225,31 @@ NMI:
 	LDA #HIGH(sprMarioData)	; ""
 	STA curSpriteDataHi 	; ""
 _NMI_CopyMarioToOAM:
-	LDA playery
+	LDA playery		; set Y position
 	CLC
 	ADC sprMarioData, x
 	STA $0200, x
 	INX
-
-	LDA sprMarioData, x
+	LDA sprMarioData, x	; set tile number
 	STA $0200, x
 	INX
-
-	LDA sprMarioData, x
+	LDA pad1a
+	AND #%00000001
+	BNE _NMI_CopyMarioToOAM_padup
+	LDA #$03
+	JMP _NMI_CopyMarioToOAM_paddone
+_NMI_CopyMarioToOAM_padup:	
+	LDA sprMarioData, x	; set attributes
+_NMI_CopyMarioToOAM_paddone:	
 	STA $0200, x
 	INX
-
-	LDA playerx
+	LDA playerx		; set X position
 	CLC
 	ADC sprMarioData, x
 	STA $0200, x
 	INX
-
-	INY
-	CPY curSpriteLen
+	INY			; increment the sprite counter
+	CPY curSpriteLen	; any more sprites in the current multisprite?
 	BNE _NMI_CopyMarioToOAM
 	
 	;; We need to copy all our OAM data to put sprites on screen during
