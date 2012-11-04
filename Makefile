@@ -1,6 +1,6 @@
 all: nesgame.nes
 nesgame.nes : nesgame.S
-	NESASM3 $<
+	ophis -o $@ $<
 
 .PHONY: test
 test:

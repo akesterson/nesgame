@@ -15,7 +15,8 @@ Milestone list:
 8- Apply gravity to a sprite and have him stand on the "ground"
 9- Jumping sprite in response to the gamepad
 10- Scrolling tile map (moving camera)
-11- Add a second actor/sprite to the screen and make it stand
+11- (DONE) Add a second actor/sprite to the screen
+11.5 Make all visible actors stand
 12- Collide two actors with each other
 13- Create actors on screen from map data (e.g. some data in RAM)
 14- Change an actor's sprite based on its state

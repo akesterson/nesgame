@@ -25,6 +25,8 @@
   .space prevReturnAddrHi 1
   .org $0010
 	;; $0010 - 001F is reserved for global pointers
+  .space curSpriteOAMIndexLo 1
+  .space curSpriteOAMIndexHi 1
   .space curSpriteDataLo 1
   .space curSpriteDataHi 1
   .org $0020
@@ -208,7 +210,29 @@ _MAIN_LoadPaletteLoop:
 	LDA sprMario
 	PHA
 	;; DO IT
+	LDA #$00
+	STA curSpriteOAMIndexLo
+	LDA #$02
+	STA curSpriteOAMIndexHi
 	JSR oamInsertMultiSprite
+	;;  ----------------------------------
+	LDA #$20
+	STA playerx
+	LDA #$20
+	STA playery
+	LDA #<sprMario2Data
+	PHA
+	LDA #>sprMario2Data
+	PHA
+	LDA sprMario2
+	PHA
+	LDA #$40
+	STA curSpriteOAMIndexLo
+	LDA #$02
+	STA curSpriteOAMIndexHi
+	JSR oamInsertMultiSprite
+	;; ---------------------------
+
 _MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
@@ -242,18 +266,18 @@ _looptop:
 	LDA playery		; set Y position
 	CLC
 	ADC (curSpriteDataLo), y
-	STA $0200, y
+	STA (curSpriteOAMIndexLo), y
 	INY
 	LDA (curSpriteDataLo), y	; set tile number
-	STA $0200, y
+	STA (curSpriteOAMIndexLo), y
 	INY
 	LDA (curSpriteDataLo), y
-	STA $0200, y
+	STA (curSpriteOAMIndexLo), y
 	INY
 	LDA playerx		; set X position
 	CLC
 	ADC (curSpriteDataLo), y
-	STA $0200, y
+	STA (curSpriteOAMIndexLo), y
 	INY
 	INX			; increment the sprite counter
 	CPX curSpriteLen	; any more sprites in the current multisprite?
@@ -291,6 +315,19 @@ sprMarioData:
   .byte $10,$05,$00,$08
   .byte $18,$06,$00,$00
   .byte $18,$07,$00,$08
+
+sprMario2:
+  .byte $08 			; Total number of subsprites in this metasprite
+sprMario2Data:
+  ;;  Y, Tile, Atr, X
+  .byte $00,$08,$00,$00
+  .byte $00,$09,$00,$08
+  .byte $08,$0A,$00,$00
+  .byte $08,$0B,$00,$08
+  .byte $10,$0C,$00,$00
+  .byte $10,$0D,$00,$08
+  .byte $18,$0E,$00,$00
+  .byte $18,$0F,$00,$08
 
   .advance $FFFA
   .word NMI	;; For Non-Maskable Interrupts, please jump to the location
