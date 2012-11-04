@@ -15,13 +15,20 @@
 
   .include "defines.S"
 	
-  .text zp			; zero page - this begins at $00
-				; all pointers should go here
-	;; $0000 - $000F is reserved for local variables/function args
-  .org $0010			; $0010 - 002F reserved for pointers
+  .text zp
+  .org $0000
+	;; $0000 is reserved for things we use to extend PL/PH for call/return stacks
+	;; FIXME: Will need to expand this stuff once I start calling 2+
+	;; functions at once; e.g., JSR a -> JSR b -> JSR c...
+	;; will need to expand it to a real stack.
+  .space prevReturnAddrLo 1
+  .space prevReturnAddrHi 1
+  .org $0010
+	;; $0010 - 001F is reserved for global pointers
   .space curSpriteDataLo 1
   .space curSpriteDataHi 1
-  .org $0030
+  .org $0020
+	;; $0020 - 00FF is space for general purpose global variables
   .space curSpriteLen	1
   .space playery	1
   .space playerx	1
@@ -193,22 +200,45 @@ _MAIN_LoadPaletteLoop:
 	LDA #$80
 	STA playerx
 	STA playery
+	;; Put mario in as the first multisprite
+	LDA #<sprMarioData
+	PHA
+	LDA #>sprMarioData
+	PHA
+	LDA sprMario
+	PHA
+	;; DO IT
+	JSR oamInsertMultiSprite
 _MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
-NMI:
+	;; Function : oamInsertMultiSprite
+	;;
+	;; Given the address of a multisprite, and its length (number of
+	;; subsprites), load the multisprite into the OAM memory at
+	;; index 0.
+	;;
+	;; Arguments on the stack:
+	;;     - Length of multisprite
+	;;     - High byte of multisprite's address
+	;;     - Low byte of multisprite's address
+	;;
+	;; FIXME: Need to keep a list of all multisprites so I can append
+	;; new ones to the list, and remove dead ones; right now this all
+	;; presumes $0200 is the root for the multisprite, which will stop
+	;; being true once I have more than one.
+oamInsertMultiSprite:
+	.invoke storeStackReturn
 	LDX #$0
 	LDY #$0
-	;; This is almost a reusable function ... store 'sprMario' as our
-	;; current sprite that we're about to draw
-	LDA sprMario
+	PLA
 	STA curSpriteLen
-	LDA #>sprMarioData
+	PLA
 	STA curSpriteDataHi
-	LDA #<sprMarioData
+	PLA
 	STA curSpriteDataLo
 	;; ----
-_NMI_CopyMarioToOAM:
+_looptop:
 	LDA playery		; set Y position
 	CLC
 	ADC (curSpriteDataLo), y
@@ -217,14 +247,7 @@ _NMI_CopyMarioToOAM:
 	LDA (curSpriteDataLo), y	; set tile number
 	STA $0200, y
 	INY
-	LDA pad1a
-	AND #%00000001
-	BNE _NMI_CopyMarioToOAM_padup
 	LDA (curSpriteDataLo), y
-	JMP _NMI_CopyMarioToOAM_paddone
-_NMI_CopyMarioToOAM_padup:	
-	LDA sprMarioData, y	; set attributes
-_NMI_CopyMarioToOAM_paddone:	
 	STA $0200, y
 	INY
 	LDA playerx		; set X position
@@ -234,8 +257,11 @@ _NMI_CopyMarioToOAM_paddone:
 	INY
 	INX			; increment the sprite counter
 	CPX curSpriteLen	; any more sprites in the current multisprite?
-	BNE _NMI_CopyMarioToOAM
+	BNE _looptop
+	.invoke restoreStackReturn
+	RTS
 	
+NMI:	
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
 	;; to pull OAM from $0200, and do a DMA transfer.
