@@ -1,15 +1,1 @@
-playerx=$0010
-playery=$0011
-curSpriteData=$0012		; 2 bytes
-curSpriteDataLo=$0013
-curSpriteDataHi=$0012
-curSpriteLen=$0014
-pad1a=$0015
-pad1b=$0016
-pad1select=$0017
-pad1start=$0018
-pad1up=$0019
-pad1down=$001A
-pad1left=$001B
-pad1right=$001C
-pad1areleased=$001D
+  .alias curSpriteData curSpriteDataHi

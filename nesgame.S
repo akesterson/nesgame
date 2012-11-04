@@ -3,17 +3,40 @@
 	;; how many 8kB banks of CHR data, which mapper to use for bank swapping
 	;; and how to perform background mirroring
 
-  .inesprg 1		;; 1x 16kB bank of PRG (program) code
-  .ineschr 1		;; 1x 8kB bank of CHR (tile/sprite) data
-  .inesmap 0		;; use mapper 0; NROM, no bank swapping
-  .inesmir 1		;; background mirroring (we don't care for now)
+	;; iNES header block
+	
+  .byte "NES",$1A
+  .byte $01		;; 1 PRG ROM page (how big is an ophis page?)
+  .byte $02		;; 1 CHR (tile/sprite) ROM page (how big is a page?)
+  .byte $00		; Horizontal mirroring
+  .byte $00		; Mapper 0 (NROM, no bank switching)
+  .byte $00,$00,$00,$00	; Reserved bytes
+  .byte $00,$00,$00,$00 ; Reserved bytes
 
   .include "defines.S"
 	
-	;; For NESASM, we need to tell it where each bank begins.
+  .text zp			; zero page - this begins at $00
+				; all pointers should go here
+	;; $0000 - $000F is reserved for local variables/function args
+  .org $0010			; $0010 - 002F reserved for pointers
+  .space curSpriteDataLo 1
+  .space curSpriteDataHi 1
+  .org $0030
+  .space curSpriteLen	1
+  .space playery	1
+  .space playerx	1
+  .space pad1a		1
+  .space pad1b		1
+  .space pad1select	1
+  .space pad1start	1
+  .space pad1up		1
+  .space pad1down	1
+  .space pad1left	1
+  .space pad1right	1
+  .space pad1areleased	1
 
-  .bank 0
-  .org $C000		;; PRG bank 1 has 8kB at 0x0C000
+  .text
+  .org $C000		;; PRG bank code starts at 0xC000
 
 	;; START will be called by the NES whenever the system boots
 	;; or when the reset button is pressed (think of _start in libc )
@@ -171,48 +194,6 @@ _MAIN_LoadPaletteLoop:
 	STA playerx
 	STA playery
 _MAIN_loop:
-	LDA #$01
-	STA $4016
-	LDA #$01
-	STA $4016		; $4016 is the controller port, this tells both
-				;; controllers to latch their buttons and
-				;; make data available
-	LDA #$0
-	STA pad1areleased
-	LDA $4016
-	AND #%00000001
-	BNE _MAIN_loop_pad1a_finished
-_MAIN_loop_pad1a_release:
-	PHA
-	LDA #pad1a
-	AND #%00000001
-	PLA
-	BNE _MAIN_loop_pad1a_finished
-	LDX #$1
-	STX pad1areleased
-_MAIN_loop_pad1a_finished:
-	STA pad1a
-	LDA $4016
-_MAIN_loop_pad1b_finished:
-	STA pad1b
-	LDA $4016
-_MAIN_loop_pad1sel_finished:
-	STA pad1select
-	LDA $4016
-_MAIN_loop_pad1start_finished:
-	STA pad1start
-	LDA $4016
-_MAIN_loop_pad1up_finished:
-	STA pad1up
-	LDA $4016
-_MAIN_loop_pad1down_finished:
-	STA pad1down
-	LDA $4016
-_MAIN_loop_pad1left_finished:
-	STA pad1left
-	LDA $4016
-_MAIN_loop_pad1right_finished:
-	STA pad1right
 	JMP _MAIN_loop	 	;; Loop forever
 
 NMI:
@@ -220,10 +201,6 @@ NMI:
 	LDY #$0
 	LDA sprMario
 	STA curSpriteLen
-	LDA #LOW(sprMarioData) 	; This stuff doesn't work at current
-	STA curSpriteDataLo	; ""
-	LDA #HIGH(sprMarioData)	; ""
-	STA curSpriteDataHi 	; ""
 _NMI_CopyMarioToOAM:
 	LDA playery		; set Y position
 	CLC
@@ -236,7 +213,7 @@ _NMI_CopyMarioToOAM:
 	LDA pad1a
 	AND #%00000001
 	BNE _NMI_CopyMarioToOAM_padup
-	LDA #$03
+	LDA sprMarioData, x
 	JMP _NMI_CopyMarioToOAM_paddone
 _NMI_CopyMarioToOAM_padup:	
 	LDA sprMarioData, x	; set attributes
@@ -265,39 +242,31 @@ _NMI_CopyMarioToOAM_paddone:
 				; loop to do the same thing would take
 				; 3-4 times as long.
 	RTI			; just return
-	
-  .bank 1		;; NESASM sees our 16kB code banks as pairs of
-  .org $E000		;; 8kB code banks, so we have to declare each
-			;; 8kB half-bank separately, and split code
-			;; between them.
-			;; .. How to know when we have written enough
-			;; code? ..
+
 palette:
-  .db $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
-  .db $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
+  .byte $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
+  .byte $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
 sprMario:
-  .db $08 			; Total number of subsprites in this metasprite
+  .byte $08 			; Total number of subsprites in this metasprite
 sprMarioData:
   ;;  Y, Tile, Atr, X
-  .db $00,$00,$00,$00
-  .db $00,$01,$00,$08
-  .db $08,$02,$00,$00
-  .db $08,$03,$00,$08
-  .db $10,$04,$00,$00
-  .db $10,$05,$00,$08
-  .db $18,$06,$00,$00
-  .db $18,$07,$00,$08
-	
-  .bank 1
-  .org $FFFA
-  .dw NMI	;; For Non-Maskable Interrupts, please jump to the location
+  .byte $00,$00,$00,$00
+  .byte $00,$01,$00,$08
+  .byte $08,$02,$00,$00
+  .byte $08,$03,$00,$08
+  .byte $10,$04,$00,$00
+  .byte $10,$05,$00,$08
+  .byte $18,$06,$00,$00
+  .byte $18,$07,$00,$08
+
+  .advance $FFFA
+  .word NMI	;; For Non-Maskable Interrupts, please jump to the location
 	        ;; of the NMI label
-  .dw START 	;; For the reset button or power-on, jump to the location
+  .word START 	;; For the reset button or power-on, jump to the location
 		;; of the START label
-  .dw 0	  	;; If we used an external IRQ vector, we would put it here
+  .word 0  	;; If we used an external IRQ vector, we would put it here
 
 	;; --- graphics bank
 	
-  .bank 2		;; CHR bank 0 starts here for tile/sprite data
   .org $0000		;; CHR data is below PRG data in the memory
   .incbin "mario.chr"	; include 8kB of graphics from SMB1
