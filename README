@@ -2,6 +2,8 @@ Yo, it's a NES game!
 
 Sort of. It will get better.
 
+Compiles with Ophis (http://michaelcmartin.github.com/Ophis/), tests with fceux (http://www.fceux.com/web/home.html). Put them both in your path, type "make", "make test", have fun staring at the pretty (?) pictures.
+
 Milestone list:
 
 1- (DONE) Boot a ROM that does nothing 
