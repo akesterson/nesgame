@@ -13,7 +13,7 @@
   .byte $00,$00,$00,$00	; Reserved bytes
   .byte $00,$00,$00,$00 ; Reserved bytes
 
-  .include "defines.S"
+  .require "include/defines.S"
 	
   .text zp
   .org $0000
@@ -25,12 +25,20 @@
   .space prevReturnAddrHi 1
   .org $0010
 	;; $0010 - 001F is reserved for global pointers
+  .space curPaletteLo	1
+  .space curPaletteHi 1
   .space curSpriteOAMIndexLo 1
   .space curSpriteOAMIndexHi 1
+  .space curBackgroundLo 1
+  .space curBackgroundHi 1
+  .space curBackgroundAttrLo 1
+  .space curBackgroundAttrHi 1
   .space curSpriteDataLo 1
   .space curSpriteDataHi 1
   .org $0020
-	;; $0020 - 00FF is space for general purpose global variables
+	;; $0020 - 00FF is space for general purpose global variable
+  .space curBackgroundLen 1
+  .space curBackgroundAttrLen 1
   .space curSpriteLen	1
   .space playery	1
   .space playerx	1
@@ -43,9 +51,19 @@
   .space pad1left	1
   .space pad1right	1
   .space pad1areleased	1
+  .space multiSpriteList 16 	; reserve 6 words for the list of multisprites
+				; currently on screen, each one listed as a
+				; WORD address
+  .space tempdivident 1
+  .space tempdivisor 1
+  .space tempdivresult 1
+  .space tempdivmodulus 1
 
   .text
   .org $C000		;; PRG bank code starts at 0xC000
+
+  .require "include/math.S"
+  .require "include/graphics.S"
 
 	;; START will be called by the NES whenever the system boots
 	;; or when the reset button is pressed (think of _start in libc )
@@ -113,51 +131,18 @@ _START_vblankwait2:
 	BPL _START_vblankwait2	;; once we've gotten 1 vblank,
 				;; cleared mem, and gotten another vblank,
 				;; the PPU is ready. Wait for it.
-
-MAIN:
+	JMP main	
+	
+	
+main:
 	;; horray, here is main()
-_MAIN_LoadPalettes:
-	LDA $2002		; The PPU Memory address at $2006 expects
-				; the high byte of the palette address first,
-				; then the low byte, but we can't know
-				; which one it's expecting right now, so we
-				; read the PPU status at $2002 to reset the
-				; high/low latch on $2006.
-	LDA #$3F		; we're populating the second palette, at $3F10
-	STA $2006
 	LDA #$00
-	STA $2006
-	LDX #$00
-_MAIN_LoadPaletteLoop:
-	LDA palette, x		; Loop over each index of the byte array at
-	STA $2007		; 'palette', store each one into the accumulator
-	INX			; and then store the accumulator into the PPU
-	CPX #$20		; .. compare X to 20 (size of 'palette'), and
-	BNE _MAIN_LoadPaletteLoop ; loop as long as the Zero flag isn't set (NE)
-	
-
-	;; All sprites live between 0200-02FF; there are a max of 64 sprites
-	;; on screen, and each one has a 4 byte struct describing it.
-	;; *(sprite + 0) = y position
-	;; *(sprite + 1) = tile index (0-FF) in the pattern table for pixels
-	;; *(sprite + 2) = attributes. Color palette, priority, and mirroring.
-	;;  76543210
-	;;  |||   ||
-	;;  |||   ++- Color Palette of sprite.  Choose which set of 4 from
-	;;  |||       	the 16 colors to use. You can select sprite colors only
-	;;  |||		in groups of 4 on 4 byte boundaries; so you can select
-	;;  |||		colors 0-3, 4-7, 8-11, and 12-15, but not 2-5, for
-	;;  |||		example. Palette construction and use is an art in
-	;;  |||		itself!
-	;;  |||
-	;;  ||+------ Priority (0: in front of background; 1: behind background)
-	;;  |+------- Flip sprite horizontally
-	;;  +-------- Flip sprite vertically
-	;; *(sprite + 3) = x position
-
-	;; All the sprite OAM data is initialized at the bottom of bank 1
-	;; at .org $FF00
-	
+	PHA
+	LDA #<palette
+	PHA
+	LDA #>palette
+	PHA
+	JSR paletteLoad
 	;; $2000 is the PPU Control register, controlled by various bitflags.
 	;; 
 	;; 7654 3210
@@ -175,9 +160,6 @@ _MAIN_LoadPaletteLoop:
 	;; +--------- Generate an NMI at the start of the
 	;;            vertical blanking interval (0: off; 1: on)
 
-	LDA #%10000000		; enable NMI (so we get a function call every
-				; vblank), and draw sprites from table 0
-	STA $2000
 
 	;; The PPU mask is set at $2001, the 2nd PPU Control register, and it
 	;; sets one config option for every bit of the byte
@@ -195,10 +177,7 @@ _MAIN_LoadPaletteLoop:
 	;; |+------- Intensify greens (and darken other colors)
 	;; +-------- Intensify blues (and darken other colors)
 
-	LDA #%00010000		;; turn on sprites, no more background color
-	STA $2001		;; Write to PPU Control Register 2
-	LDX #$0
-
+	
 	LDA #$80
 	STA playerx
 	STA playery
@@ -232,59 +211,36 @@ _MAIN_LoadPaletteLoop:
 	STA curSpriteOAMIndexHi
 	JSR oamInsertMultiSprite
 	;; ---------------------------
+_bgcall:
+	LDA bgattrsize
+        PHA
+        LDA #>backgroundattrs
+        PHA
+        LDA #<backgroundattrs
+        PHA
+	LDA bgsize
+	PHA
+        LDA #>background
+        PHA
+        LDA #<background
+        PHA
+        JSR backgroundLoad
+
+	;; Apparently you do NOT set sprite and tile data while these are turned on, bad things
+	;; will happen!
+	LDA #%10010000		; enable NMI (so we get a function call every
+				; vblank), and draw sprites from table 0
+	STA $2000
+	LDA #%10011110		;; turn on sprites, turn on background, don't clip on the left
+	STA $2001		;; Write to PPU Control Register 2
+	LDA #$00		; hey PPU, stop friggin scrolling!
+	STA $2005
+	STA $2005
+	LDX #$0
 
 _MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
-	;; Function : oamInsertMultiSprite
-	;;
-	;; Given the address of a multisprite, and its length (number of
-	;; subsprites), load the multisprite into the OAM memory at
-	;; index 0.
-	;;
-	;; Arguments on the stack:
-	;;     - Length of multisprite
-	;;     - High byte of multisprite's address
-	;;     - Low byte of multisprite's address
-	;;
-	;; FIXME: Need to keep a list of all multisprites so I can append
-	;; new ones to the list, and remove dead ones; right now this all
-	;; presumes $0200 is the root for the multisprite, which will stop
-	;; being true once I have more than one.
-oamInsertMultiSprite:
-	.invoke storeStackReturn
-	LDX #$0
-	LDY #$0
-	PLA
-	STA curSpriteLen
-	PLA
-	STA curSpriteDataHi
-	PLA
-	STA curSpriteDataLo
-	;; ----
-_looptop:
-	LDA playery		; set Y position
-	CLC
-	ADC (curSpriteDataLo), y
-	STA (curSpriteOAMIndexLo), y
-	INY
-	LDA (curSpriteDataLo), y	; set tile number
-	STA (curSpriteOAMIndexLo), y
-	INY
-	LDA (curSpriteDataLo), y
-	STA (curSpriteOAMIndexLo), y
-	INY
-	LDA playerx		; set X position
-	CLC
-	ADC (curSpriteDataLo), y
-	STA (curSpriteOAMIndexLo), y
-	INY
-	INX			; increment the sprite counter
-	CPX curSpriteLen	; any more sprites in the current multisprite?
-	BNE _looptop
-	.invoke restoreStackReturn
-	RTS
-	
 NMI:	
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
@@ -298,11 +254,63 @@ NMI:
 				; which takes ~513 cycles. An unrolled
 				; loop to do the same thing would take
 				; 3-4 times as long.
+	LDA #%10010000		; enable NMI (so we get a function call every
+				; vblank), and draw sprites from table 0
+	STA $2000
+	LDA #%00011110		;; turn on sprites, turn on background, don't clip on the left
+	STA $2001		;; Write to PPU Control Register 2
+	LDA #$00		; hey PPU, stop friggin scrolling!
+	STA $2005
+	STA $2005
 	RTI			; just return
 
 palette:
-  .byte $0F,$31,$32,$33,$0F,$35,$36,$37,$0F,$39,$3A,$3B,$0F,$3D,$3E,$0F
-  .byte $0F,$1C,$15,$14,$0F,$02,$38,$3C,$0F,$1C,$15,$14,$0F,$02,$38,$3C
+  .byte $22,$29,$1A,$0F,$22,$36,$17,$0F,$22,$30,$21,$0F,$22,$27,$17,$0F   ;;background palette
+  .byte $22,$1C,$15,$14,$22,$02,$38,$3C,$22,$1C,$15,$14,$22,$02,$38,$3C   ;;sprite palette
+bgsize:
+  .byte $80
+bgattrsize:
+  .byte $08
+background:
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24  ;;row 1
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24  ;;all sky
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24  ;;row 2
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24  ;;all sky
+  .byte $24,$24,$24,$24,$45,$45,$24,$24,$45,$45,$45,$45,$45,$45,$24,$24  ;;row 3
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$53,$54,$24,$24  ;;some brick tops
+  .byte $24,$24,$24,$24,$47,$47,$24,$24,$47,$47,$47,$47,$47,$47,$24,$24  ;;row 4
+  .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$55,$56,$24,$24  ;;brick bottoms
+backgroundattrs:
+  .byte %00000000,%00010000,%01010000,%00010000
+  .byte %00000000,%00000000,%00000000,%00110000
+  .byte $24,$24,$24,$24
+  .byte $47,$47,$24,$24
+  .byte $47,$47,$47,$47
+  .byte $47,$47,$24,$24
+  .byte $24,$24,$24,$24
+  .byte $24,$24,$24,$24
+  .byte $24,$24,$24,$24
+  .byte $55,$56,$24,$24  ;;brick bottoms
+
+	;; All sprites live between 0200-02FF; there are a max of 64 sprites
+	;; on screen, and each one has a 4 byte struct describing it.
+	;; *(sprite + 0) = y position
+	;; *(sprite + 1) = tile index (0-FF) in the pattern table for pixels
+	;; *(sprite + 2) = attributes. Color palette, priority, and mirroring.
+	;;  76543210
+	;;  |||   ||
+	;;  |||   ++- Color Palette of sprite.  Choose which set of 4 from
+	;;  |||       	the 16 colors to use. You can select sprite colors only
+	;;  |||		in groups of 4 on 4 byte boundaries; so you can select
+	;;  |||		colors 0-3, 4-7, 8-11, and 12-15, but not 2-5, for
+	;;  |||		example. Palette construction and use is an art in
+	;;  |||		itself!
+	;;  |||
+	;;  ||+------ Priority (0: in front of background; 1: behind background)
+	;;  |+------- Flip sprite horizontally
+	;;  +-------- Flip sprite vertically
+	;; *(sprite + 3) = x position
+
 sprMario:
   .byte $08 			; Total number of subsprites in this metasprite
 sprMarioData:
