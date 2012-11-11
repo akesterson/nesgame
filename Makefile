@@ -6,7 +6,7 @@ MAIN_SOURCE=nesgame.S
 
 all: nesgame.nes
 nesgame.nes : $(SOURCE)
-	ophis -o $(MAIN_SOURCE) $<
+	ophis -o $@ $(MAIN_SOURCE)
 
 .PHONY: test
 test: nesgame.nes

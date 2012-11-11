@@ -4,7 +4,7 @@
 	;; and how to perform background mirroring
 
 	;; iNES header block
-	
+
   .byte "NES",$1A
   .byte $01		;; 1 PRG ROM page (how big is an ophis page?)
   .byte $02		;; 1 CHR (tile/sprite) ROM page (how big is a page?)
@@ -14,7 +14,7 @@
   .byte $00,$00,$00,$00 ; Reserved bytes
 
   .require "include/defines.S"
-	
+
   .text zp
   .org $0000
 	;; $0000 is reserved for things we use to extend PL/PH for call/return stacks
@@ -42,22 +42,21 @@
   .space curSpriteLen	1
   .space playery	1
   .space playerx	1
-  .space pad1a		1
-  .space pad1b		1
-  .space pad1select	1
-  .space pad1start	1
-  .space pad1up		1
-  .space pad1down	1
-  .space pad1left	1
-  .space pad1right	1
-  .space pad1areleased	1
-  .space multiSpriteList 16 	; reserve 6 words for the list of multisprites
-				; currently on screen, each one listed as a
-				; WORD address
+  .space pad1state	1
+  .space pad2state      1
+  .space pad3state      1
+  .space pad4state      1
+
   .space tempdivident 1
   .space tempdivisor 1
   .space tempdivresult 1
   .space tempdivmodulus 1
+
+  .org $0040
+  .space sprMario2DataHook1 1
+  .space sprMario2DataHook2 1
+  .space sprMario2DataHook3 1
+  .space sprMario2DataHook4 1
 
   .text
   .org $C000		;; PRG bank code starts at 0xC000
@@ -82,7 +81,7 @@ START:
 	TXS			;; Move the contents of X to the stack pointer
 	INX			;; increment X by 1, which causes overflow, so
 				;; now X is 0
-	
+
 	STX $2000		;; set PPU flag to disable NMI (0x2000 = 0)
 	STX $2001		;; set PPU flag to disable rendering (0x2001=0)
 	STX $4010		;; disable APU IRQs, no audio
@@ -113,7 +112,7 @@ _START_clearmem:
 				;; stack (0100-01FF), the entirety of main RAM
 				;; (0200-07FF)
 
-	LDA #$FE		;; These two are clearing all of the sprite 
+	LDA #$FE		;; These two are clearing all of the sprite
 	STA $0200, x		;; OAM; previous tutorial had this at 0300,
 				;; which may have been wrong. We don't HAVE
 				;; to reserve this range for OAM; we could
@@ -131,9 +130,9 @@ _START_vblankwait2:
 	BPL _START_vblankwait2	;; once we've gotten 1 vblank,
 				;; cleared mem, and gotten another vblank,
 				;; the PPU is ready. Wait for it.
-	JMP main	
-	
-	
+	JMP main
+
+
 main:
 	;; horray, here is main()
 	LDA #$00
@@ -144,7 +143,7 @@ main:
 	PHA
 	JSR paletteLoad
 	;; $2000 is the PPU Control register, controlled by various bitflags.
-	;; 
+	;;
 	;; 7654 3210
 	;; |||| ||||
 	;; |||| ||++- Base nametable address
@@ -163,7 +162,7 @@ main:
 
 	;; The PPU mask is set at $2001, the 2nd PPU Control register, and it
 	;; sets one config option for every bit of the byte
-	;; 
+	;;
 	;; 76543210
 	;; ||||||||
 	;; |||||||+- Grayscale (0: normal color; 1: AND all palette entries
@@ -177,7 +176,7 @@ main:
 	;; |+------- Intensify greens (and darken other colors)
 	;; +-------- Intensify blues (and darken other colors)
 
-	
+
 	LDA #$80
 	STA playerx
 	STA playery
@@ -241,7 +240,7 @@ _bgcall:
 _MAIN_loop:
 	JMP _MAIN_loop	 	;; Loop forever
 
-NMI:	
+NMI:
 	;; We need to copy all our OAM data to put sprites on screen during
 	;; vblank. $2003 is the PPU OAM address, so we're going to tell it
 	;; to pull OAM from $0200, and do a DMA transfer.
@@ -254,6 +253,112 @@ NMI:
 				; which takes ~513 cycles. An unrolled
 				; loop to do the same thing would take
 				; 3-4 times as long.
+
+_latch1:
+	LDA #$01
+	STA $4016
+	LDA #$00
+	STA $4016
+	LDA #$00
+	STA pad1state
+
+	LDX #$08
+	CLC
+_readpad1:
+	LDA $4016
+	AND #%00000001
+	ORA pad1state
+	DEX
+	BEQ _storepad1
+	CLC
+	ROL
+	STA pad1state
+	JMP _readpad1
+_storepad1:
+	STA pad1state
+
+_checkselect:
+	LDA #padselect
+	AND pad1state
+	BEQ _checkstart
+	LDA sprMario2DataHook1
+	CLC
+	ADC #$01
+	STA sprMario2DataHook1
+_checkstart:
+	LDA #padstart
+	AND pad1state
+	BEQ _checka
+	LDA sprMario2DataHook2
+	CLC
+	ADC #$01
+	STA sprMario2DataHook2
+_checka:
+	LDA #pada
+	AND pad1state
+	BEQ _checkb
+	LDA sprMario2DataHook3
+	CLC
+	ADC #$01
+	STA sprMario2DataHook3
+_checkb:
+	LDA #padb
+	AND pad1state
+	BEQ _checkwalkright
+	LDA sprMario2DataHook4
+	CLC
+	ADC #$01
+	STA sprMario2DataHook4
+
+_checkwalkright:
+	LDA #%00000001
+	AND pad1state
+	BEQ _checkwalkleft
+	LDA playerx
+	CLC
+	ADC #$01
+	STA playerx
+_checkwalkleft:
+	LDA #padleft
+	AND pad1state
+	BEQ _checkwalkup
+	LDA playerx
+	SEC
+	SBC #$01
+	STA playerx
+_checkwalkup:
+	LDA #padup
+	AND pad1state
+	BEQ _checkwalkdown
+	LDA playery
+	SEC
+	SBC #$01
+	STA playery
+_checkwalkdown:
+	LDA #paddown
+	AND pad1state
+	BEQ _move_mario
+	LDA playery
+	CLC
+	ADC #$01
+	STA playery
+_move_mario:
+	;; Put mario in as the first multisprite
+	LDA #<sprMarioData
+	PHA
+	LDA #>sprMarioData
+	PHA
+	LDA sprMario
+	PHA
+	;; DO IT
+	LDA #$00
+	STA curSpriteOAMIndexLo
+	LDA #$02
+	STA curSpriteOAMIndexHi
+	JSR oamInsertMultiSprite
+
+
+_nmi_finish:
 	LDA #%10010000		; enable NMI (so we get a function call every
 				; vblank), and draw sprites from table 0
 	STA $2000
@@ -262,7 +367,7 @@ NMI:
 	LDA #$00		; hey PPU, stop friggin scrolling!
 	STA $2005
 	STA $2005
-	RTI			; just return
+	RTI
 
 palette:
   .byte $22,$29,$1A,$0F,$22,$36,$17,$0F,$22,$30,$21,$0F,$22,$27,$17,$0F   ;;background palette
@@ -345,6 +450,6 @@ sprMario2Data:
   .word 0  	;; If we used an external IRQ vector, we would put it here
 
 	;; --- graphics bank
-	
+
   .org $0000		;; CHR data is below PRG data in the memory
   .incbin "mario.chr"	; include 8kB of graphics from SMB1
